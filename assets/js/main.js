@@ -5,15 +5,20 @@
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
   const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const CONTACT_EMAIL = 'khobaucuaban@gmail.com';
 
-  /* ---------- Header: trạng thái khi cuộn + nút lên đầu trang ---------- */
+  /* ---------- Header, nút lên đầu trang, nút "Đặt tour ngay" ---------- */
   const header = $('.header');
   const toTop = $('#toTop');
+  const stickyCta = $('#stickyCta');
+  const booking = $('#dat-tour');
 
   function onScroll() {
     const y = window.scrollY;
     header.classList.toggle('is-scrolled', y > 30);
     toTop.classList.toggle('is-visible', y > 700);
+    const nearBooking = booking.getBoundingClientRect().top < window.innerHeight * 0.9;
+    stickyCta.classList.toggle('is-visible', y > 700 && !nearBooking);
   }
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
@@ -96,29 +101,6 @@
     }, { passive: true });
   }
 
-  /* ---------- Tabs: Kênh & quan hệ khách hàng ---------- */
-  const tabBtns = $$('.tabs__btn');
-  function activateTab(btn) {
-    tabBtns.forEach((b) => {
-      const active = b === btn;
-      b.classList.toggle('is-active', active);
-      b.setAttribute('aria-selected', String(active));
-      b.tabIndex = active ? 0 : -1;
-      const panel = document.getElementById(b.getAttribute('aria-controls'));
-      panel.hidden = !active;
-      panel.classList.toggle('is-active', active);
-    });
-  }
-  tabBtns.forEach((btn, i) => {
-    btn.addEventListener('click', () => activateTab(btn));
-    btn.addEventListener('keydown', (e) => {
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-      const next = tabBtns[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabBtns.length) % tabBtns.length];
-      next.focus();
-      activateTab(next);
-    });
-  });
-
   /* ---------- Phóng to ảnh ---------- */
   const lightbox = $('#lightbox');
   const lbImg = $('img', lightbox);
@@ -142,22 +124,91 @@
   lightbox.addEventListener('click', (e) => { if (e.target !== lbImg) closeLightbox(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !lightbox.hidden) closeLightbox(); });
 
-  /* ---------- Form liên hệ (chạy local, chưa gửi lên máy chủ) ---------- */
-  const form = $('#contactForm');
+  /* ---------- Form đặt tour: giá tham khảo theo gói ---------- */
+  const form = $('#bookingForm');
+  const pkgSelect = $('#f-package');
+  const qtyInput = $('#f-qty');
+  const qtyLabel = $('#qtyLabel');
+  const tripFields = $('#tripFields');
+  const estPrice = $('#estPrice');
+  const estNote = $('#estNote');
   const status = $('#formStatus');
 
+  const vnd = (n) => new Intl.NumberFormat('vi-VN').format(n) + 'đ';
+
+  // Giá tham khảo theo kế hoạch của dự án
+  const PRICE = { truong: 8000000, workshop: 3000000, single: 250000, group: 180000, groupMin: 5 };
+
+  const PACKAGES = {
+    truong:   { qty: 'Số học sinh dự kiến', defQty: 40,
+                estimate: () => ['Từ ' + vnd(PRICE.truong), '/ chương trình · gói học kỳ/năm gồm 2–3 chương trình'] },
+    workshop: { qty: 'Số người tham gia', defQty: 30,
+                estimate: () => ['Từ ' + vnd(PRICE.workshop), '/ workshop · tổ chức độc lập hoặc kết hợp chương trình'] },
+    dukhach:  { qty: 'Số khách', defQty: 2,
+                estimate: (n) => {
+                  if (n >= PRICE.groupMin) {
+                    const save = n * (PRICE.single - PRICE.group);
+                    return [vnd(n * PRICE.group), `${n} khách × ${vnd(PRICE.group)} (giá nhóm) · tiết kiệm ${vnd(save)}`];
+                  }
+                  const more = PRICE.groupMin - n;
+                  return [vnd(n * PRICE.single), `${n} khách × ${vnd(PRICE.single)} · thêm ${more} khách để hưởng giá nhóm ${vnd(PRICE.group)}/khách`];
+                } },
+    anpham:   { estimate: () => ['Quà văn hóa có câu chuyện', 'Chúng mình sẽ gửi danh mục ấn phẩm, đặc sản và điểm bán gần bạn'] },
+    homestay: { estimate: () => ['Ký gửi miễn phí', 'Chiết khấu 20–30% mỗi ấn phẩm bán ra · tài trợ kệ trưng bày'] },
+    nghenhan: { estimate: () => ['Hợp tác minh bạch', 'Hỗ trợ chi phí mỗi buổi làm việc · chia sẻ doanh thu cho nghệ nhân, quỹ bản làng'] },
+    taitro:   { estimate: () => ['Đồng hành CSR', 'Triển lãm lưu động, học bổng, thiết bị cho chương trình'] }
+  };
+
+  function currentQty() {
+    const n = parseInt(qtyInput.value, 10);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  }
+
+  function updateEstimate() {
+    const p = PACKAGES[pkgSelect.value];
+    tripFields.hidden = !p.qty;
+    if (p.qty) qtyLabel.textContent = p.qty;
+    const [price, note] = p.estimate(currentQty());
+    estPrice.textContent = price;
+    estNote.textContent = note;
+  }
+
+  function selectPackage(key) {
+    if (!PACKAGES[key]) return;
+    pkgSelect.value = key;
+    if (PACKAGES[key].defQty) qtyInput.value = PACKAGES[key].defQty;
+    updateEstimate();
+  }
+
+  pkgSelect.addEventListener('change', () => selectPackage(pkgSelect.value));
+  qtyInput.addEventListener('input', updateEstimate);
+
+  // Nút "Đặt gói này" / "Trở thành điểm ký gửi"… chọn sẵn gói trong form
+  $$('[data-package]').forEach((el) => {
+    el.addEventListener('click', () => {
+      selectPackage(el.dataset.package);
+      setTimeout(() => $('#f-name').focus({ preventScroll: true }), 600);
+    });
+  });
+
+  selectPackage(pkgSelect.value);
+
+  // Không cho chọn ngày trong quá khứ
+  const dateInput = $('#f-date');
+  const today = new Date();
+  dateInput.min = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
+
+  /* ---------- Gửi yêu cầu: kiểm tra dữ liệu và soạn sẵn email ---------- */
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = form.elements.name;
-    const phone = form.elements.phone;
-    const email = form.elements.email;
+    const f = form.elements;
+    const fields = [f.name, f.phone, f.email];
+    fields.forEach((el) => el.classList.remove('is-invalid'));
+
     let firstInvalid = null;
-
-    [name, phone, email].forEach((f) => f.classList.remove('is-invalid'));
-
-    if (!name.value.trim()) firstInvalid = firstInvalid || name;
-    if (!/^[0-9+\s().-]{8,}$/.test(phone.value.trim())) firstInvalid = firstInvalid || phone;
-    if (email.value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) firstInvalid = firstInvalid || email;
+    if (!f.name.value.trim()) firstInvalid = f.name;
+    if (!/^[0-9+\s().-]{8,}$/.test(f.phone.value.trim())) firstInvalid = firstInvalid || f.phone;
+    if (f.email.value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim())) firstInvalid = firstInvalid || f.email;
 
     if (firstInvalid) {
       firstInvalid.classList.add('is-invalid');
@@ -167,9 +218,37 @@
       return;
     }
 
+    const pkgName = pkgSelect.options[pkgSelect.selectedIndex].text;
+    const p = PACKAGES[pkgSelect.value];
+    const lines = [
+      'Gói / hình thức: ' + pkgName,
+      p.qty ? p.qty + ': ' + currentQty() : null,
+      p.qty && f.date.value ? 'Ngày dự kiến: ' + f.date.value.split('-').reverse().join('/') : null,
+      'Giá tham khảo: ' + estPrice.textContent + ' (' + estNote.textContent + ')',
+      '',
+      'Họ tên: ' + f.name.value.trim(),
+      'Điện thoại: ' + f.phone.value.trim(),
+      f.email.value.trim() ? 'Email: ' + f.email.value.trim() : null,
+      f.org.value.trim() ? 'Trường / đơn vị: ' + f.org.value.trim() : null,
+      f.message.value.trim() ? 'Ghi chú: ' + f.message.value.trim() : null
+    ].filter((l) => l !== null);
+
+    const mailto = 'mailto:' + CONTACT_EMAIL +
+      '?subject=' + encodeURIComponent('Đặt tour – ' + pkgName) +
+      '&body=' + encodeURIComponent(lines.join('\n'));
+
     status.className = 'form__status is-ok';
-    status.textContent = `Cảm ơn ${name.value.trim()}! Kho Báu Của Bản đã nhận lời nhắn và sẽ liên hệ lại sớm.`;
-    form.reset();
+    status.innerHTML = '';
+    const msg = document.createElement('p');
+    msg.style.margin = '0';
+    msg.innerHTML = '<strong>Cảm ơn bạn!</strong> Yêu cầu đã sẵn sàng. Bấm nút dưới để gửi qua email, hoặc gọi ' +
+      '<a href="tel:+84912345678">(+84) 912 345 678</a> để được tư vấn ngay.';
+    const btn = document.createElement('a');
+    btn.className = 'btn btn--primary';
+    btn.href = mailto;
+    btn.textContent = 'Gửi yêu cầu qua email';
+    status.append(msg, btn);
+    btn.focus();
   });
 
   /* ---------- Năm hiện tại ở chân trang ---------- */
